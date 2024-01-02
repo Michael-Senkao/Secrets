@@ -1,0 +1,29 @@
+
+<script>
+    function validatePassword() {
+      var passwordInput = document.getElementById("passwordInput");
+      var passwordError = document.getElementById("passwordError");
+
+      // Set minimum and maximum password length
+      var minLength = 6;
+      var maxLength = 12;
+
+      if (
+        passwordInput.value.length < minLength ||
+        passwordInput.value.length > maxLength
+      ) {
+        passwordError.innerHTML =
+          "Password must be between " +
+          minLength +
+          " and " +
+          maxLength +
+          " characters";
+        return false;
+      } else {
+        passwordError.innerHTML = "";
+        return true;
+      }
+    }
+  </script>
+</body>
+</html>
