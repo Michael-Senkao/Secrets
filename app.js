@@ -5,9 +5,12 @@ import pg from "pg";
 import session from "express-session";
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
+import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import bcrypt from "bcrypt";
 import flash from "express-flash";
+import dotenv from "dotenv";
 
+dotenv.config();
 const app = express();
 const port = 3000;
 
@@ -26,10 +29,10 @@ app.use(passport.session());
 app.use(flash());
 
 const pool = new pg.Pool({
-  user: "postgres",
-  host: "localhost",
-  database: "secrets",
-  password: "senkao4813",
+  user: process.env.USER,
+  host: process.env.HOST,
+  database: process.env.DATABASE,
+  password: process.env.PASSWORD,
   port: 5432,
 });
 
@@ -56,19 +59,66 @@ passport.use(
   })
 );
 
+passport.use(
+  new GoogleStrategy(
+    {
+      clientID: process.env.CLIENT_ID,
+      clientSecret: process.env.CLIENT_SECRET,
+      callbackURL: process.env.CALLBACK_URL,
+    },
+    async (accessToken, refreshToken, profile, done) => {
+      // console.log(profile);
+      try {
+        const user = await pool.query(
+          "SELECT * FROM users WHERE google_id = $1",
+          [profile._json.sub]
+        );
+        // console.log(user.rows[0]);
+        if (user.rowCount > 0) {
+          done(null, user.rows[0]);
+        } else {
+          try {
+            const user = await pool.query(
+              "INSERT INTO users(google_id) VALUES($1) RETURNING *",
+              [profile._json.sub]
+            );
+            done(null, user.rows[0]);
+          } catch (error) {
+            console.log(error);
+
+            done(error);
+          }
+        }
+      } catch (error) {
+        console.log(error);
+        done(error);
+      }
+    }
+  )
+);
+
 passport.serializeUser((user, done) => {
-  done(null, user.id);
+  done(null, user);
 });
 
-passport.deserializeUser(async (id, done) => {
-  try {
-    const result = await pool.query("SELECT * FROM users WHERE id = $1", [id]);
-    const user = result.rows[0];
-    done(null, user);
-  } catch (error) {
-    done(error);
-  }
+passport.deserializeUser((user, done) => {
+  done(null, user);
 });
+
+app.get(
+  "/auth/google",
+  passport.authenticate("google", {
+    scope: ["profile"],
+  })
+);
+
+app.get(
+  "/auth/google/callback",
+  passport.authenticate("google", {
+    failureRedirect: "/login",
+    successRedirect: "/secrets",
+  })
+);
 
 app.get("/", (req, res) => {
   res.render("home");
@@ -82,63 +132,13 @@ app.get("/login", (req, res) => {
   res.render("login");
 });
 
-// app.get("/logout", (req, res) => {
-//   res.redirect("/");
-// });
-
 app.get("/secrets", ensureAuthenticated, (req, res) => {
   res.render("secrets.ejs");
 });
 
-// app.post("/register", async (req, res) => {
-//   const email = req.body.username;
-//   const password = req.body.password;
-//   try {
-//     const result = await db.query(
-//       "INSERT INTO users(email,password) VALUES($1, crypt($2, gen_salt('bf'))) ",
-//       [email, password]
-//     );
-//     res.redirect("/login");
-//   } catch (error) {
-//     if (error.detail == "Key (email)=(1@2.com) already exists.") {
-//       res.render("register", { error: "Email already exists." });
-//     }
-//   }
-// });
-
-// app.post("/login", async (req, res) => {
-//   console.log(req.body);
-//   const email = req.body.username;
-//   const password = req.body.password;
-//   try {
-//     const result = await db.query(
-//       "SELECT * FROM users WHERE email = $1 AND password = crypt($2, password)",
-//       [email, password]
-//     );
-//     //console.log(result.rows);
-//     if (result.rows == 0) {
-//       res.render("login", {
-//         error: "Please enter a valid email and password.",
-//       });
-//     } else {
-//       res.redirect("/secrets");
-//     }
-//   } catch (error) {
-//     console.log(error);
-//   }
-// });
-
-// app.post(
-//   "/login",
-//   passport.authenticate("local", {
-//     successRedirect: "/secrets",
-//     failureRedirect: "/login",
-//     failureFlash: true,
-//   })
-// );
-
 app.post("/login", (req, res, next) => {
   passport.authenticate("local", (err, user, info) => {
+    // console.log(user);
     if (err) {
       return next(err);
     }
